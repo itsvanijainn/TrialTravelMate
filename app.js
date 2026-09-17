@@ -457,12 +457,19 @@ function togglePackingItem(id) {
   const item = state.packingItems.find(i => i.id === id);
   if (item) {
     item.packed = !item.packed;
+    if (window.db) {
+      const tripId = state.currentTrip ? state.currentTrip.id : 'default';
+      db.savePackingItem(tripId, item);
+    }
     renderPackingList();
   }
 }
 
 function deletePackingItem(id) {
   state.packingItems = state.packingItems.filter(i => i.id !== id);
+  if (window.db) {
+    db.deletePackingItem(id);
+  }
   renderPackingList();
   showToast("Item removed from packing bag!");
 }
@@ -475,6 +482,10 @@ function addPackingItem(name, category) {
     packed: false
   };
   state.packingItems.unshift(newItem);
+  if (window.db) {
+    const tripId = state.currentTrip ? state.currentTrip.id : 'default';
+    db.savePackingItem(tripId, newItem);
+  }
   renderPackingList();
   showToast(`Added "${name}" to ${category}!`);
 }
@@ -550,6 +561,10 @@ function addExpense(title, amount, category) {
     category: category
   };
   state.budget.expenses.push(newExp);
+  if (window.db) {
+    const tripId = state.currentTrip ? state.currentTrip.id : 'default';
+    db.saveBudgetItem(tripId, newExp);
+  }
   renderBudget();
   showToast(`Receipt logged: ${title} (-${CURRENCY_SYMBOLS[state.budget.currency] || '$'}${amount})`);
 }
@@ -807,21 +822,33 @@ document.addEventListener("DOMContentLoaded", () => {
       state.budget.categories["Transport"].planned = Math.round(budget * 0.12);
       state.budget.categories["Shopping & Souvenirs"].planned = Math.round(budget * 0.08);
 
-      // Save to My Trips
-      state.savedTrips.unshift({
+      // Save to My Trips & Database
+      const tripRecord = {
         id: tripId,
         title: tripTitle,
         destination,
         dates: `${depDate} to ${retDate}`,
         duration,
         travellers: `${travellerType} (${travellerCount} travellers)`,
+        travellerType,
+        travellerCount,
         style: travelStyle,
+        travelStyle,
         hotel: accommodation,
+        accommodation,
         budget,
         currency,
         pace,
         status: "Active"
-      });
+      };
+
+      state.savedTrips.unshift(tripRecord);
+
+      if (window.db) {
+        db.saveTrip(tripRecord);
+        db.saveItinerary(tripId, state.currentTrip.days);
+        db.saveBudgetItem(tripId, { category: "Total", amount: budget, currency });
+      }
 
       renderItinerary();
       renderBudget();
@@ -881,33 +908,55 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // 7. Initialize Default Trip into Itinerary
-  state.currentTrip = generateRealisticItinerary({
-    title: "Kyoto Spring Blossom Escape",
-    destination: "Kyoto, Japan",
-    duration: 5,
-    dates: "2026-04-10 to 2026-04-15",
-    budget: 1800,
-    currency: "USD",
-    travellerType: "Couple / Pair",
-    travellerCount: 2,
-    travelStyle: "Cultural & Historic",
-    accommodation: "Boutique Ryokan Gion",
-    pace: "Balanced & Steady (3-4 stops/day)"
-  });
+  // 7. Initialize State & Load from Database
+  async function initializeApp() {
+    if (window.db) {
+      try {
+        const storedTrips = await db.getAllTrips();
+        if (storedTrips && storedTrips.length > 0) {
+          state.savedTrips = storedTrips;
+        } else {
+          // Seed initial trips into DB
+          for (const t of state.savedTrips) {
+            await db.saveTrip(t);
+          }
+        }
+      } catch (err) {
+        console.warn("Database initialization fallback to memory:", err);
+      }
+    }
 
-  // 8. Render everything
-  renderItinerary();
-  renderPackingList();
-  renderBudget();
-  renderDestinations();
-  renderMyTrips();
+    state.currentTrip = generateRealisticItinerary({
+      title: state.savedTrips[0]?.title || "Kyoto Spring Blossom Escape",
+      destination: state.savedTrips[0]?.destination || "Kyoto, Japan",
+      duration: state.savedTrips[0]?.duration || 5,
+      dates: state.savedTrips[0]?.dates || "2026-04-10 to 2026-04-15",
+      budget: state.savedTrips[0]?.budget || 1800,
+      currency: state.savedTrips[0]?.currency || "USD",
+      travellerType: "Couple / Pair",
+      travellerCount: 2,
+      travelStyle: "Cultural & Historic",
+      accommodation: "Boutique Ryokan Gion",
+      pace: "Balanced & Steady (3-4 stops/day)"
+    });
 
-  // 9. Check window hash on load
-  const hash = window.location.hash.replace("#", "");
-  if (hash && document.getElementById(`${hash}-view`)) {
-    navigateTo(hash);
-  } else {
-    navigateTo("home");
+    if (window.db && state.currentTrip) {
+      db.saveItinerary(state.currentTrip.id || "default-kyoto", state.currentTrip.days);
+    }
+
+    renderItinerary();
+    renderPackingList();
+    renderBudget();
+    renderDestinations();
+    renderMyTrips();
+
+    const hash = window.location.hash.replace("#", "");
+    if (hash && document.getElementById(`${hash}-view`)) {
+      navigateTo(hash);
+    } else {
+      navigateTo("home");
+    }
   }
+
+  initializeApp();
 });

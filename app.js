@@ -15,6 +15,103 @@ const CURRENCY_SYMBOLS = {
   INR: "₹"
 };
 
+// Backend API Client
+const API_BASE = window.location.origin.includes("http") ? window.location.origin : "http://localhost:3000";
+const api = {
+  async getTrips() {
+    try {
+      const res = await fetch(`${API_BASE}/api/trips`);
+      return res.ok ? await res.json() : null;
+    } catch (e) {
+      return null;
+    }
+  },
+  async getTrip(id) {
+    try {
+      const res = await fetch(`${API_BASE}/api/trips/${id}`);
+      return res.ok ? await res.json() : null;
+    } catch (e) {
+      return null;
+    }
+  },
+  async createTrip(tripData) {
+    try {
+      const res = await fetch(`${API_BASE}/api/trips`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(tripData)
+      });
+      return res.ok ? await res.json() : null;
+    } catch (e) {
+      return null;
+    }
+  },
+  async updateTrip(id, data) {
+    try {
+      const res = await fetch(`${API_BASE}/api/trips/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data)
+      });
+      return res.ok ? await res.json() : null;
+    } catch (e) {
+      return null;
+    }
+  },
+  async deleteTrip(id) {
+    try {
+      const res = await fetch(`${API_BASE}/api/trips/${id}`, { method: "DELETE" });
+      return res.ok ? await res.json() : null;
+    } catch (e) {
+      return null;
+    }
+  },
+  async savePacking(tripId, item) {
+    try {
+      const res = await fetch(`${API_BASE}/api/trips/${tripId}/packing`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(item)
+      });
+      return res.ok ? await res.json() : null;
+    } catch (e) {
+      return null;
+    }
+  },
+  async togglePacking(tripId, itemId, isPacked) {
+    try {
+      const res = await fetch(`${API_BASE}/api/trips/${tripId}/packing/${itemId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_packed: isPacked })
+      });
+      return res.ok ? await res.json() : null;
+    } catch (e) {
+      return null;
+    }
+  },
+  async deletePacking(tripId, itemId) {
+    try {
+      const res = await fetch(`${API_BASE}/api/trips/${tripId}/packing/${itemId}`, { method: "DELETE" });
+      return res.ok ? await res.json() : null;
+    } catch (e) {
+      return null;
+    }
+  },
+  async saveExpense(tripId, expense) {
+    try {
+      const res = await fetch(`${API_BASE}/api/trips/${tripId}/budget`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(expense)
+      });
+      return res.ok ? await res.json() : null;
+    } catch (e) {
+      return null;
+    }
+  }
+};
+
 // Curated destinations with realistic travel info
 const DESTINATIONS = [
   {
@@ -457,19 +554,18 @@ function togglePackingItem(id) {
   const item = state.packingItems.find(i => i.id === id);
   if (item) {
     item.packed = !item.packed;
-    if (window.db) {
-      const tripId = state.currentTrip ? state.currentTrip.id : 'default';
-      db.savePackingItem(tripId, item);
-    }
+    const tripId = state.currentTrip ? state.currentTrip.id : 'trip-kyoto-spring';
+    api.togglePacking(tripId, id, item.packed);
+    if (window.db) db.savePackingItem(tripId, item);
     renderPackingList();
   }
 }
 
 function deletePackingItem(id) {
   state.packingItems = state.packingItems.filter(i => i.id !== id);
-  if (window.db) {
-    db.deletePackingItem(id);
-  }
+  const tripId = state.currentTrip ? state.currentTrip.id : 'trip-kyoto-spring';
+  api.deletePacking(tripId, id);
+  if (window.db) db.deletePackingItem(id);
   renderPackingList();
   showToast("Item removed from packing bag!");
 }
@@ -482,10 +578,9 @@ function addPackingItem(name, category) {
     packed: false
   };
   state.packingItems.unshift(newItem);
-  if (window.db) {
-    const tripId = state.currentTrip ? state.currentTrip.id : 'default';
-    db.savePackingItem(tripId, newItem);
-  }
+  const tripId = state.currentTrip ? state.currentTrip.id : 'trip-kyoto-spring';
+  api.savePacking(tripId, newItem);
+  if (window.db) db.savePackingItem(tripId, newItem);
   renderPackingList();
   showToast(`Added "${name}" to ${category}!`);
 }
@@ -561,10 +656,9 @@ function addExpense(title, amount, category) {
     category: category
   };
   state.budget.expenses.push(newExp);
-  if (window.db) {
-    const tripId = state.currentTrip ? state.currentTrip.id : 'default';
-    db.saveBudgetItem(tripId, newExp);
-  }
+  const tripId = state.currentTrip ? state.currentTrip.id : 'trip-kyoto-spring';
+  api.saveExpense(tripId, newExp);
+  if (window.db) db.saveBudgetItem(tripId, newExp);
   renderBudget();
   showToast(`Receipt logged: ${title} (-${CURRENCY_SYMBOLS[state.budget.currency] || '$'}${amount})`);
 }
@@ -651,37 +745,89 @@ function renderMyTrips() {
         <li>💰 <strong>Budget:</strong> ${CURRENCY_SYMBOLS[trip.currency] || '$'}${trip.budget}</li>
       </ul>
 
-      <div class="trip-card-actions">
-        <button class="btn btn-primary btn-small w-100" onclick="loadSavedTripToItinerary('${trip.id}')">
+      <div class="trip-card-actions" style="display: flex; gap: 0.5rem;">
+        <button class="btn btn-primary btn-small" style="flex: 2;" onclick="loadSavedTripToItinerary('${trip.id}')">
           📖 Open Itinerary
+        </button>
+        <button class="btn btn-outline btn-small" style="flex: 1; padding: 0.4rem;" onclick="deleteTripHandler('${trip.id}')" title="Delete Trip">
+          🗑️ Delete
         </button>
       </div>
     </div>
   `).join("");
 }
 
-function loadSavedTripToItinerary(tripId) {
-  const trip = state.savedTrips.find(t => t.id === tripId);
-  if (!trip) return;
+async function deleteTripHandler(tripId) {
+  if (!confirm("Are you sure you want to remove this trip journal?")) return;
+  await api.deleteTrip(tripId);
+  state.savedTrips = state.savedTrips.filter(t => t.id !== tripId);
+  renderMyTrips();
+  showToast("Trip removed from database!");
+}
 
-  state.currentTrip = generateRealisticItinerary({
-    title: trip.title,
-    destination: trip.destination,
-    duration: trip.duration,
-    dates: trip.dates,
-    budget: trip.budget,
-    currency: trip.currency,
-    travellerType: trip.travellers.split(' ')[0],
-    travellerCount: trip.travellers.match(/\d+/) ? trip.travellers.match(/\d+/)[0] : 2,
-    travelStyle: trip.style,
-    accommodation: trip.hotel,
-    pace: trip.pace || "Balanced & Steady"
-  });
+async function loadSavedTripToItinerary(tripId) {
+  let tripData = await api.getTrip(tripId);
+  const localTrip = state.savedTrips.find(t => t.id === tripId);
+
+  if (tripData && tripData.trip) {
+    const t = tripData.trip;
+    state.currentTrip = {
+      id: t.id,
+      title: `${t.destination.split(',')[0]} Scrapbook Vacation`,
+      destination: t.destination,
+      dates: `${t.start_date} to ${t.end_date}`,
+      duration: t.duration,
+      budget: t.budget,
+      currency: t.currency,
+      travellerType: t.traveller_type,
+      travellerCount: t.traveller_count,
+      travelStyle: t.travel_style,
+      accommodation: t.accommodation,
+      pace: t.pace,
+      days: (tripData.days && tripData.days.length > 0) 
+        ? tripData.days 
+        : generateRealisticItinerary({ destination: t.destination, duration: t.duration }).days
+    };
+
+    if (tripData.packing && tripData.packing.length > 0) {
+      state.packingItems = tripData.packing.map(p => ({
+        id: p.id,
+        name: p.item_name,
+        category: p.category,
+        packed: !!p.is_packed
+      }));
+      renderPackingList();
+    }
+
+    if (tripData.budget && tripData.budget.length > 0) {
+      state.budget.expenses = tripData.budget.map(b => ({
+        id: b.id,
+        title: b.title || b.category,
+        category: b.category,
+        amount: b.amount
+      }));
+      renderBudget();
+    }
+  } else if (localTrip) {
+    state.currentTrip = generateRealisticItinerary({
+      title: localTrip.title,
+      destination: localTrip.destination,
+      duration: localTrip.duration,
+      dates: localTrip.dates,
+      budget: localTrip.budget,
+      currency: localTrip.currency,
+      travellerType: localTrip.travellers.split(' ')[0],
+      travellerCount: localTrip.travellers.match(/\d+/) ? localTrip.travellers.match(/\d+/)[0] : 2,
+      travelStyle: localTrip.style,
+      accommodation: localTrip.hotel,
+      pace: localTrip.pace || "Balanced & Steady"
+    });
+  }
 
   state.activeDayIndex = 0;
   renderItinerary();
   navigateTo("itinerary");
-  showToast(`Loaded ${trip.title}!`);
+  showToast(`Loaded ${state.currentTrip.title}!`);
 }
 
 // ==========================================
@@ -844,6 +990,23 @@ document.addEventListener("DOMContentLoaded", () => {
 
       state.savedTrips.unshift(tripRecord);
 
+      // Persist to Backend API & SQLite Database
+      api.createTrip({
+        id: tripId,
+        destination,
+        startDate: depDate,
+        endDate: retDate,
+        duration,
+        budget,
+        currency,
+        travellerType,
+        travellerCount,
+        travelStyle,
+        accommodation,
+        pace,
+        days: state.currentTrip.days
+      });
+
       if (window.db) {
         db.saveTrip(tripRecord);
         db.saveItinerary(tripId, state.currentTrip.days);
@@ -854,7 +1017,7 @@ document.addEventListener("DOMContentLoaded", () => {
       renderBudget();
       renderMyTrips();
 
-      showToast(`🎉 Created itinerary for ${destination}!`);
+      showToast(`🎉 Saved trip to database!`);
       navigateTo("itinerary");
     });
   }
@@ -908,43 +1071,58 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // 7. Initialize State & Load from Database
+  // 7. Initialize State & Load from Backend Database
   async function initializeApp() {
-    if (window.db) {
-      try {
-        const storedTrips = await db.getAllTrips();
-        if (storedTrips && storedTrips.length > 0) {
-          state.savedTrips = storedTrips;
-        } else {
-          // Seed initial trips into DB
-          for (const t of state.savedTrips) {
-            await db.saveTrip(t);
+    let backendTrips = await api.getTrips();
+
+    if (backendTrips && backendTrips.length > 0) {
+      state.savedTrips = backendTrips.map(t => ({
+        id: t.id,
+        title: `${t.destination.split(',')[0]} Scrapbook Vacation`,
+        destination: t.destination,
+        dates: `${t.start_date} to ${t.end_date}`,
+        duration: t.duration,
+        travellers: `${t.traveller_type} (${t.traveller_count} travellers)`,
+        style: t.travel_style,
+        hotel: t.accommodation,
+        accommodation: t.accommodation,
+        budget: t.budget,
+        currency: t.currency,
+        pace: t.pace,
+        status: "Active"
+      }));
+
+      // Load first trip's details directly from backend
+      await loadSavedTripToItinerary(state.savedTrips[0].id);
+    } else {
+      if (window.db) {
+        try {
+          const storedTrips = await db.getAllTrips();
+          if (storedTrips && storedTrips.length > 0) {
+            state.savedTrips = storedTrips;
           }
+        } catch (err) {
+          console.warn("Local DB read error:", err);
         }
-      } catch (err) {
-        console.warn("Database initialization fallback to memory:", err);
       }
+
+      state.currentTrip = generateRealisticItinerary({
+        title: state.savedTrips[0]?.title || "Kyoto Spring Blossom Escape",
+        destination: state.savedTrips[0]?.destination || "Kyoto, Japan",
+        duration: state.savedTrips[0]?.duration || 5,
+        dates: state.savedTrips[0]?.dates || "2026-04-10 to 2026-04-15",
+        budget: state.savedTrips[0]?.budget || 1800,
+        currency: state.savedTrips[0]?.currency || "USD",
+        travellerType: "Couple / Pair",
+        travellerCount: 2,
+        travelStyle: "Cultural & Historic",
+        accommodation: "Boutique Ryokan Gion",
+        pace: "Balanced & Steady (3-4 stops/day)"
+      });
+
+      renderItinerary();
     }
 
-    state.currentTrip = generateRealisticItinerary({
-      title: state.savedTrips[0]?.title || "Kyoto Spring Blossom Escape",
-      destination: state.savedTrips[0]?.destination || "Kyoto, Japan",
-      duration: state.savedTrips[0]?.duration || 5,
-      dates: state.savedTrips[0]?.dates || "2026-04-10 to 2026-04-15",
-      budget: state.savedTrips[0]?.budget || 1800,
-      currency: state.savedTrips[0]?.currency || "USD",
-      travellerType: "Couple / Pair",
-      travellerCount: 2,
-      travelStyle: "Cultural & Historic",
-      accommodation: "Boutique Ryokan Gion",
-      pace: "Balanced & Steady (3-4 stops/day)"
-    });
-
-    if (window.db && state.currentTrip) {
-      db.saveItinerary(state.currentTrip.id || "default-kyoto", state.currentTrip.days);
-    }
-
-    renderItinerary();
     renderPackingList();
     renderBudget();
     renderDestinations();

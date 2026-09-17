@@ -1,0 +1,12 @@
+{
+  "name": "travelmate",
+  "version": "1.0.0",
+  "description": "TravelMate - Cute Pastel Scrapbook Travel Planner",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "keywords": ["travel", "planner", "scrapbook"],
+  "author": "",
+  "license": "ISC"
+}

@@ -109,6 +109,15 @@ const api = {
     } catch (e) {
       return null;
     }
+  },
+  async generateTrip(preferences) {
+    const res = await fetch(`${API_BASE}/generate-trip`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(preferences)
+    });
+    const data = await res.json();
+    return { ok: res.ok, status: res.status, data };
   }
 };
 
@@ -913,11 +922,14 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   }
 
-  // 3. Plan Trip Form Submission
+  // 3. Plan Trip Form Submission (Connected to Grok AI Backend)
   const planForm = document.getElementById("planTripForm");
   if (planForm) {
-    planForm.addEventListener("submit", (e) => {
+    planForm.addEventListener("submit", async (e) => {
       e.preventDefault();
+
+      const submitBtn = planForm.querySelector("button[type='submit']");
+      const originalBtnText = submitBtn.innerHTML;
 
       const destination = document.getElementById("tripDestination").value.trim();
       const depDate = document.getElementById("tripDeparture").value;
@@ -933,66 +945,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const styleRadio = document.querySelector("input[name='travelStyle']:checked");
       const travelStyle = styleRadio ? styleRadio.value : "Cultural & Historic";
 
-      const tripId = `trip-${Date.now()}`;
-      const tripTitle = `${destination.split(',')[0]} Scrapbook Vacation`;
-
-      const newTripData = {
-        id: tripId,
-        title: tripTitle,
-        destination,
-        dates: `${depDate} to ${retDate}`,
-        duration,
-        travellers: `${travellerType} (${travellerCount} travellers)`,
-        travellerType,
-        travellerCount,
-        style: travelStyle,
-        travelStyle,
-        hotel: accommodation,
-        accommodation,
-        budget,
-        currency,
-        pace,
-        status: "Active"
-      };
-
-      // Generate realistic multi-day itinerary
-      state.currentTrip = generateRealisticItinerary(newTripData);
-      state.activeDayIndex = 0;
-
-      // Update budget system with new planned budget & currency
-      state.budget.total = budget;
-      state.budget.currency = currency;
-      state.budget.categories["Accommodation"].planned = Math.round(budget * 0.4);
-      state.budget.categories["Food & Dining"].planned = Math.round(budget * 0.25);
-      state.budget.categories["Activities & Sights"].planned = Math.round(budget * 0.15);
-      state.budget.categories["Transport"].planned = Math.round(budget * 0.12);
-      state.budget.categories["Shopping & Souvenirs"].planned = Math.round(budget * 0.08);
-
-      // Save to My Trips & Database
-      const tripRecord = {
-        id: tripId,
-        title: tripTitle,
-        destination,
-        dates: `${depDate} to ${retDate}`,
-        duration,
-        travellers: `${travellerType} (${travellerCount} travellers)`,
-        travellerType,
-        travellerCount,
-        style: travelStyle,
-        travelStyle,
-        hotel: accommodation,
-        accommodation,
-        budget,
-        currency,
-        pace,
-        status: "Active"
-      };
-
-      state.savedTrips.unshift(tripRecord);
-
-      // Persist to Backend API & SQLite Database
-      api.createTrip({
-        id: tripId,
+      const tripPayload = {
         destination,
         startDate: depDate,
         endDate: retDate,
@@ -1003,22 +956,133 @@ document.addEventListener("DOMContentLoaded", () => {
         travellerCount,
         travelStyle,
         accommodation,
-        pace,
-        days: state.currentTrip.days
-      });
+        pace
+      };
 
-      if (window.db) {
-        db.saveTrip(tripRecord);
-        db.saveItinerary(tripId, state.currentTrip.days);
-        db.saveBudgetItem(tripId, { category: "Total", amount: budget, currency });
+      // Loading state
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = "✨ Grok AI is writing your itinerary...";
+
+      try {
+        const result = await api.generateTrip(tripPayload);
+
+        if (result.ok && result.data && result.data.success) {
+          const data = result.data;
+          const tripObj = data.trip;
+
+          state.currentTrip = {
+            id: tripObj.id,
+            title: data.title || `${destination.split(',')[0]} AI Vacation`,
+            summary: data.summary,
+            destination: tripObj.destination,
+            dates: `${tripObj.start_date} to ${tripObj.end_date}`,
+            duration: tripObj.duration,
+            budget: tripObj.budget,
+            currency: tripObj.currency,
+            travellerType: tripObj.traveller_type,
+            travellerCount: tripObj.traveller_count,
+            style: tripObj.travel_style,
+            hotel: tripObj.accommodation,
+            accommodation: tripObj.accommodation,
+            pace: tripObj.pace,
+            days: data.days || generateRealisticItinerary({ destination, duration }).days
+          };
+          state.activeDayIndex = 0;
+
+          // Update packing suggestions from Grok
+          if (Array.isArray(data.packing) && data.packing.length > 0) {
+            state.packingItems = data.packing.map(p => ({
+              id: p.id || Date.now(),
+              name: p.name || p.item_name,
+              category: p.category || 'Clothing',
+              packed: !!p.packed
+            }));
+            renderPackingList();
+          }
+
+          // Update budget breakdown from Grok
+          if (data.budgetBreakdown && typeof data.budgetBreakdown === 'object') {
+            Object.entries(data.budgetBreakdown).forEach(([cat, amt]) => {
+              if (state.budget.categories[cat]) {
+                state.budget.categories[cat].planned = amt;
+              }
+            });
+            state.budget.total = budget;
+            state.budget.currency = currency;
+            renderBudget();
+          }
+
+          // Save to state trips
+          state.savedTrips.unshift({
+            id: tripObj.id,
+            title: data.title || `${destination.split(',')[0]} AI Scrapbook Vacation`,
+            destination: tripObj.destination,
+            dates: `${tripObj.start_date} to ${tripObj.end_date}`,
+            duration: tripObj.duration,
+            travellers: `${tripObj.traveller_type} (${tripObj.traveller_count} travellers)`,
+            style: tripObj.travel_style,
+            hotel: tripObj.accommodation,
+            budget: tripObj.budget,
+            currency: tripObj.currency,
+            pace: tripObj.pace,
+            status: "Active"
+          });
+
+          renderItinerary();
+          renderMyTrips();
+
+          showToast(`✨ Grok AI generated your trip to ${destination}!`);
+          navigateTo("itinerary");
+        } else {
+          // Error or missing key handling
+          const errMsg = result.data?.error || "Grok AI is temporarily unavailable.";
+          showToast(`⚠️ ${errMsg}`);
+
+          if (result.data?.needsKey) {
+            alert(
+              "Grok API Key Notice:\n" +
+              "1. Sign in at https://console.x.ai/\n" +
+              "2. Generate an API Key\n" +
+              "3. Paste into .env file as XAI_API_KEY=your_key_here\n" +
+              "4. Restart server (npm start)\n\n" +
+              "Generating a standard offline scrapbook plan for you now!"
+            );
+
+            // Fallback generation so user isn't stuck
+            const fallbackId = `trip-${Date.now()}`;
+            const fallbackTrip = {
+              id: fallbackId,
+              title: `${destination.split(',')[0]} Scrapbook Escape`,
+              destination,
+              dates: `${depDate} to ${retDate}`,
+              duration,
+              travellers: `${travellerType} (${travellerCount} travellers)`,
+              style: travelStyle,
+              hotel: accommodation,
+              budget,
+              currency,
+              pace,
+              status: "Active"
+            };
+            state.currentTrip = generateRealisticItinerary(fallbackTrip);
+            state.activeDayIndex = 0;
+            state.savedTrips.unshift(fallbackTrip);
+
+            api.createTrip({ ...tripPayload, id: fallbackId, days: state.currentTrip.days });
+
+            renderItinerary();
+            renderBudget();
+            renderMyTrips();
+            navigateTo("itinerary");
+          }
+        }
+      } catch (err) {
+        console.error("Grok trip generation error:", err);
+        showToast("⚠️ Network error while contacting Grok API. You can retry!");
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalBtnText;
       }
-
-      renderItinerary();
-      renderBudget();
-      renderMyTrips();
-
-      showToast(`🎉 Saved trip to database!`);
-      navigateTo("itinerary");
     });
   }
 

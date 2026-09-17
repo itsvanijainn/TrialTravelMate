@@ -1,0 +1,5 @@
+.env
+travelmate.db
+travelmate.db-journal
+node_modules
+.DS_Store

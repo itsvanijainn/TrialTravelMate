@@ -77,15 +77,15 @@ const server = http.createServer(async (req, res) => {
 
   try {
     // ==========================================
-    // GROK AI TRIP GENERATION ENDPOINT
+    // GROQ AI TRIP GENERATION ENDPOINT
     // ==========================================
     if ((pathname === '/generate-trip' || pathname === '/api/generate-trip') && method === 'POST') {
       const body = await parseBody(req);
-      const apiKey = process.env.XAI_API_KEY;
+      const apiKey = process.env.GROQ_API_KEY || process.env.XAI_API_KEY;
 
       if (!apiKey || apiKey === '$$$$$' || apiKey.trim() === '') {
         return sendJson(res, 400, {
-          error: "XAI_API_KEY is not configured in .env. Please set your valid Grok API key from https://console.x.ai/",
+          error: "GROQ_API_KEY is not configured in .env. Please set your valid Groq API key from https://console.groq.com/keys",
           needsKey: true
         });
       }
@@ -152,18 +152,19 @@ Note: Ensure you include exactly ${duration} day objects in the "days" array. Su
 
       let aiResponse;
       try {
-        const grokFetch = await fetch('https://api.x.ai/v1/chat/completions', {
+        const groqFetch = await fetch('https://api.groq.com/openai/v1/chat/completions', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${apiKey}`
           },
           body: JSON.stringify({
-            model: 'grok-beta',
+            model: 'openai/gpt-oss-120b',
+            response_format: { type: 'json_object' },
             messages: [
               {
                 role: 'system',
-                content: 'You are an expert travel planner for TravelMate. You output exclusively strict, valid JSON with no markdown formatting, backticks, or explanatory text.'
+                content: 'You are an expert travel planner for TravelMate. You output exclusively strict, valid JSON matching the requested schema.'
               },
               {
                 role: 'user',
@@ -174,27 +175,27 @@ Note: Ensure you include exactly ${duration} day objects in the "days" array. Su
           })
         });
 
-        if (!grokFetch.ok) {
-          const errText = await grokFetch.text();
-          console.error("Grok API Error Response:", errText);
-          return sendJson(res, grokFetch.status, {
-            error: `Grok API error (${grokFetch.status}): ${errText}`,
+        if (!groqFetch.ok) {
+          const errText = await groqFetch.text();
+          console.error("Groq API Error Response:", errText);
+          return sendJson(res, groqFetch.status, {
+            error: `Groq API error (${groqFetch.status}): ${errText}`,
             canRetry: true
           });
         }
 
-        aiResponse = await grokFetch.json();
+        aiResponse = await groqFetch.json();
       } catch (networkErr) {
-        console.error("Network error connecting to Grok API:", networkErr);
+        console.error("Network error connecting to Groq API:", networkErr);
         return sendJson(res, 502, {
-          error: "Failed to connect to Grok API. Please check your internet connection and API key.",
+          error: "Failed to connect to Groq API. Please check your internet connection and API key.",
           canRetry: true
         });
       }
 
       const content = aiResponse.choices?.[0]?.message?.content;
       if (!content) {
-        return sendJson(res, 500, { error: "Empty response received from Grok AI.", canRetry: true });
+        return sendJson(res, 500, { error: "Empty response received from Groq AI.", canRetry: true });
       }
 
       // Clean markdown code blocks if any were returned
@@ -209,8 +210,8 @@ Note: Ensure you include exactly ${duration} day objects in the "days" array. Su
       try {
         parsedTrip = JSON.parse(cleanedJson);
       } catch (parseErr) {
-        console.error("Failed to parse Grok JSON:", cleanedJson);
-        return sendJson(res, 500, { error: "Failed to parse structured response from Grok AI.", canRetry: true });
+        console.error("Failed to parse Groq JSON:", cleanedJson);
+        return sendJson(res, 500, { error: "Failed to parse structured response from Groq AI.", canRetry: true });
       }
 
       // Save to SQLite Database
@@ -445,5 +446,5 @@ Note: Ensure you include exactly ${duration} day objects in the "days" array. Su
 });
 
 server.listen(PORT, () => {
-  console.log(`TravelMate backend with Grok API integration listening on http://localhost:${PORT}`);
+  console.log(`TravelMate backend with Groq API integration listening on http://localhost:${PORT}`);
 });

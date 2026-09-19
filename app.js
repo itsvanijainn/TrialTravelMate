@@ -961,7 +961,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       // Loading state
       submitBtn.disabled = true;
-      submitBtn.innerHTML = "✨ Grok AI is writing your itinerary...";
+      submitBtn.innerHTML = "✨ Groq AI is writing your itinerary...";
 
       try {
         const result = await api.generateTrip(tripPayload);
@@ -989,7 +989,7 @@ document.addEventListener("DOMContentLoaded", () => {
           };
           state.activeDayIndex = 0;
 
-          // Update packing suggestions from Grok
+          // Update packing suggestions from Groq
           if (Array.isArray(data.packing) && data.packing.length > 0) {
             state.packingItems = data.packing.map(p => ({
               id: p.id || Date.now(),
@@ -1000,7 +1000,7 @@ document.addEventListener("DOMContentLoaded", () => {
             renderPackingList();
           }
 
-          // Update budget breakdown from Grok
+          // Update budget breakdown from Groq
           if (data.budgetBreakdown && typeof data.budgetBreakdown === 'object') {
             Object.entries(data.budgetBreakdown).forEach(([cat, amt]) => {
               if (state.budget.categories[cat]) {
@@ -1031,19 +1031,19 @@ document.addEventListener("DOMContentLoaded", () => {
           renderItinerary();
           renderMyTrips();
 
-          showToast(`✨ Grok AI generated your trip to ${destination}!`);
+          showToast(`✨ Groq AI generated your trip to ${destination}!`);
           navigateTo("itinerary");
         } else {
           // Error or missing key handling
-          const errMsg = result.data?.error || "Grok AI is temporarily unavailable.";
+          const errMsg = result.data?.error || "Groq AI is temporarily unavailable.";
           showToast(`⚠️ ${errMsg}`);
 
           if (result.data?.needsKey) {
             alert(
-              "Grok API Key Notice:\n" +
-              "1. Sign in at https://console.x.ai/\n" +
-              "2. Generate an API Key\n" +
-              "3. Paste into .env file as XAI_API_KEY=your_key_here\n" +
+              "Groq API Key Notice:\n" +
+              "1. Sign in at https://console.groq.com/keys\n" +
+              "2. Generate a free API Key\n" +
+              "3. Paste into .env file as GROQ_API_KEY=gsk_...\n" +
               "4. Restart server (npm start)\n\n" +
               "Generating a standard offline scrapbook plan for you now!"
             );
@@ -1077,8 +1077,8 @@ document.addEventListener("DOMContentLoaded", () => {
           }
         }
       } catch (err) {
-        console.error("Grok trip generation error:", err);
-        showToast("⚠️ Network error while contacting Grok API. You can retry!");
+        console.error("Groq trip generation error:", err);
+        showToast("⚠️ Network error while contacting Groq API. You can retry!");
       } finally {
         submitBtn.disabled = false;
         submitBtn.innerHTML = originalBtnText;
